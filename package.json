@@ -1,0 +1,14 @@
+{
+  "name": "noche-magica-lupe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Invitación digital Mil y Una Noches",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

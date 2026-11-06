@@ -1,0 +1,19 @@
+node_modules/
+.DS_Store
+*.log
+
+# Masters de video y audio: pesan 27 MB y no hacen falta para desplegar.
+# Se quedan sólo en el Mac. Guárdalos aparte.
+/aladin 1.mp4
+/aldin 2.mp4
+/alfonbra.mp4
+/*.mp3
+/fondo tarjeta.jpeg
+/para click .jpeg
+/pruebas/
+
+# binario compilado (depende de la máquina); el código fuente sí se sube
+/herramientas/comprimir
+
+# configuración local del editor
+/.claude/
