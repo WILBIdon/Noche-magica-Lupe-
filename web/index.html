@@ -213,7 +213,7 @@ body.revelado{overflow-y:auto; overflow-x:hidden}
   cursor:pointer;
 }
 .btn-discreto:hover,.btn-discreto:focus-visible{color:var(--oro-vivo);border-color:var(--oro)}
-#saltar{top:calc(1.1rem + env(safe-area-inset-top, 0px)); right:calc(1.1rem + env(safe-area-inset-right, 0px))}
+#saltar,#saltar2,#saltar3{top:calc(1.1rem + env(safe-area-inset-top, 0px)); right:calc(1.1rem + env(safe-area-inset-right, 0px))}
 #sonido{top:calc(1.1rem + env(safe-area-inset-top, 0px)); left:calc(1.1rem + env(safe-area-inset-left, 0px));
   min-width:2.75rem; padding:.45rem .7rem; font-size:.95rem; letter-spacing:0}
 
@@ -742,6 +742,13 @@ body.revelado #controles{display:flex}
   #cortina .onda{width:40vmin; height:40vmin}
   .portal .vapor{filter:blur(18px)}
   #portada .telon{filter:blur(2px) brightness(.46) saturate(.92)}
+  /* la cortina de oro entre videos: en un celular de gama media, el blur
+     de cuatro capas a la vez compite con el video que recién empieza a
+     decodificar y el flash casi no llega a pintarse. Se deja sólo lo más
+     barato de dibujar: el fogonazo (gradiente, sin blur) y un anillo. */
+  #cortina .polvo{display:none}
+  #cortina .onda.dos{display:none}
+  #cortina .estrella svg{filter:none}
 }
 
 /* ══════════ en pantalla ancha: la invitación se encuadra como un celular ══════════ */
@@ -849,6 +856,7 @@ body.revelado #controles{display:flex}
   <video id="v2" playsinline webkit-playsinline preload="metadata">
     <source src="pergamino.mp4" type="video/mp4">
   </video>
+  <button class="btn-discreto" id="saltar2" type="button">Saltar</button>
 </div>
 
 <!-- ═════════ 5. LA ALFOMBRA VOLADORA ═════════ -->
@@ -856,6 +864,7 @@ body.revelado #controles{display:flex}
   <video id="v3" playsinline webkit-playsinline preload="none">
     <source src="alfombra.mp4" type="video/mp4">
   </video>
+  <button class="btn-discreto" id="saltar3" type="button">Saltar</button>
 </div>
 
 <!-- ═════════ TRANSICIÓN ═════════ -->
@@ -1022,6 +1031,7 @@ body.revelado #controles{display:flex}
     <h2 id="t-traje">Vestuario</h2>
     <p>Como te sientas cómodo. Sin códigos, sin etiquetas.</p>
     <p>Lo único que te pido es que vengas listo para vivir un evento inolvidable… y para bailar hasta tarde.</p>
+    <p>Y como la noche sigue hasta el amanecer, trae también <strong>una prenda cómoda para el día siguiente</strong>.</p>
   </div>
 </div>
 
@@ -1052,7 +1062,7 @@ body.revelado #controles{display:flex}
 /* ═══════ Lo único que hay que editar ═══════ */
 const CFG = {
   // Pon el número de WhatsApp con indicativo y sin signos. Ej: "573001234567"
-  whatsapp: "",
+  whatsapp: "573002436120",
   mapa: "https://www.google.com/maps/search/?api=1&query=Finca%20Murano%20San%20Jer%C3%B3nimo%20Antioquia",
   // 9 de enero de 2027, 7:00 p.m. hora de Colombia
   fiesta: "2027-01-09T19:00:00-05:00"
@@ -1187,6 +1197,8 @@ esc.portada.addEventListener("keydown", (e) => {
 });
 
 $("#saltar").addEventListener("click", (e) => { e.stopPropagation(); alLampara(); });
+$("#saltar2").addEventListener("click", (e) => { e.stopPropagation(); alaAlfombra(); });
+$("#saltar3").addEventListener("click", (e) => { e.stopPropagation(); revelar(); });
 btnSon.addEventListener("click", (e) => {
   e.stopPropagation();
   silenciarTodo(!v1.muted);

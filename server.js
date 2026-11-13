@@ -2,13 +2,17 @@
  * Servidor de la invitación "Mil y Una Noches".
  * Sin dependencias a propósito: nada que instalar, nada que se rompa al desplegar.
  *
- * Hace tres cosas que un servidor estático cualquiera no haría bien aquí:
+ * Hace cuatro cosas que un servidor estático cualquiera no haría bien aquí:
  *  1. Responde peticiones Range (206). Sin esto Safari no puede adelantar los
  *     videos ni empezar a reproducirlos antes de bajarlos enteros.
  *  2. Arma el documento completo alrededor de web/index.html, que está escrito
  *     para ir dentro de un Artifact y no trae <html>/<head>/<body> propios.
  *     Sin el <meta viewport> la tarjeta se vería diminuta en cualquier celular.
- *  3. Comprime el HTML una sola vez al arrancar.
+ *  3. Completa las etiquetas Open Graph con el dominio real de cada petición
+ *     (req.headers.host), para que og:image y og:url funcionen sin importar
+ *     qué dominio asigne Railway o cuál se conecte después.
+ *  4. Comprime el HTML por petición (de sobra barato para el tráfico de una
+ *     invitación: ronda los 20 KB).
  */
 import { createServer } from "node:http";
 import { readFileSync, createReadStream, statSync } from "node:fs";
@@ -20,6 +24,8 @@ import { dirname } from "node:path";
 const AQUI  = dirname(fileURLToPath(import.meta.url));
 const RAIZ  = resolve(AQUI, "web");
 const PUERTO = process.env.PORT || 3000;
+const FAVICON = readFileSync(join(RAIZ, "favicon.svg"), "utf8");
+const FAVICON_DATA_URI = "data:image/svg+xml;base64," + Buffer.from(FAVICON, "utf8").toString("base64");
 
 const TIPOS = {
   ".html": "text/html; charset=utf-8",
@@ -36,8 +42,12 @@ const TIPOS = {
   ".woff2":"font/woff2",  ".woff": "font/woff",
 };
 
-/* ── el documento completo ───────────────────────────────────────────────── */
-function armarDocumento(){
+/* ── el documento, como plantilla ────────────────────────────────────────────
+   %%ORIGIN%% se sustituye en cada petición por el esquema+dominio reales
+   (ver servirDocumento). Así og:image y og:url quedan absolutas — lo que
+   piden el estándar y WhatsApp — sin que haya que tocar el código cuando
+   Railway asigne el dominio o se conecte uno propio después. ──────────── */
+function armarPlantilla(){
   const fuente = readFileSync(join(RAIZ, "index.html"), "utf8");
   const corte = fuente.indexOf("</style>");
   let cabeza = "", cuerpo = fuente;
@@ -48,13 +58,33 @@ function armarDocumento(){
   // el charset lo ponemos nosotros de primeras, como manda la especificación
   cabeza = cabeza.replace('<meta charset="utf-8">', "").trim();
 
+  const titulo = "Mil y Una Noches";
+  const descripcion = "Tienes una invitación esperándote. Frota la lámpara y descubre qué noche te espera.";
+
   return `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#050c1a">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%AA%94</text></svg>">
+<link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
+<link rel="canonical" href="%%ORIGIN%%/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="es_CO">
+<meta property="og:site_name" content="${titulo}">
+<meta property="og:title" content="${titulo}">
+<meta property="og:description" content="${descripcion}">
+<meta property="og:url" content="%%ORIGIN%%/">
+<meta property="og:image" content="%%ORIGIN%%/og.jpg">
+<meta property="og:image:secure_url" content="%%ORIGIN%%/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mil y una noches — una invitación te espera">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${titulo}">
+<meta name="twitter:description" content="${descripcion}">
+<meta name="twitter:image" content="%%ORIGIN%%/og.jpg">
 <style>:root{color-scheme:dark}html,body{margin:0;padding:0}img{max-width:100%}[hidden]{display:none!important}</style>
 ${cabeza}
 </head>
@@ -65,9 +95,8 @@ ${cuerpo}
 `;
 }
 
-let DOC = armarDocumento();
-let DOC_GZ = gzipSync(Buffer.from(DOC, "utf8"));
-let DOC_ETAG = `W/"doc-${DOC.length.toString(16)}"`;
+const PLANTILLA = armarPlantilla();
+const cacheGzip = new Map();   // una entrada por origen visto (normalmente una sola)
 
 /* ── utilidades ──────────────────────────────────────────────────────────── */
 const comunes = {
@@ -83,18 +112,33 @@ function noEncontrado(res){
 }
 
 function servirDocumento(req, res){
-  if (req.headers["if-none-match"] === DOC_ETAG){
-    res.writeHead(304, { ...comunes, ETag: DOC_ETAG }); return res.end();
+  const esquema = req.headers["x-forwarded-proto"] || "https";
+  const origen = `${esquema}://${req.headers.host}`;
+  const doc = PLANTILLA.split("%%ORIGIN%%").join(origen);
+  const etag = `W/"doc-${Buffer.byteLength(doc).toString(16)}-${origen.length}"`;
+
+  if (req.headers["if-none-match"] === etag){
+    res.writeHead(304, { ...comunes, ETag: etag }); return res.end();
   }
+
   const acepta = String(req.headers["accept-encoding"] || "");
   const gz = acepta.includes("gzip");
-  const datos = gz ? DOC_GZ : Buffer.from(DOC, "utf8");
+  let datos;
+  if (gz){
+    // el gzip de ~20 KB es barato; igual se cachea una vez por origen visto
+    // (normalmente uno solo) para no repetirlo en cada visita
+    datos = cacheGzip.get(origen);
+    if (!datos){ datos = gzipSync(Buffer.from(doc, "utf8")); cacheGzip.set(origen, datos); }
+  } else {
+    datos = Buffer.from(doc, "utf8");
+  }
+
   res.writeHead(200, {
     ...comunes,
     "Content-Type": "text/html; charset=utf-8",
     "Content-Length": datos.length,
     "Cache-Control": "no-cache",
-    ETag: DOC_ETAG,
+    ETag: etag,
     ...(gz ? { "Content-Encoding": "gzip", Vary: "Accept-Encoding" } : {}),
   });
   if (req.method === "HEAD") return res.end();
